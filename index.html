@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>视频解析下载</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f6f7f9; color: #1a1a1a; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 22px; margin: 8px 0 4px; }
+  .sub { color: #666; font-size: 13px; margin: 0 0 16px; }
+  .row { display: flex; gap: 8px; }
+  input { flex: 1; min-width: 0; padding: 12px; font-size: 15px; border: 1px solid #ccc; border-radius: 10px; background: #fff; }
+  button { padding: 0 18px; font-size: 15px; border: 0; border-radius: 10px; background: #111; color: #fff; cursor: pointer; white-space: nowrap; }
+  button:disabled { opacity: .5; cursor: default; }
+  .hint { color: #888; font-size: 12px; margin-top: 10px; line-height: 1.6; }
+  .card { margin-top: 18px; background: #fff; border-radius: 12px; padding: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  .card img { width: 100%; border-radius: 8px; display: block; }
+  .title { font-size: 16px; font-weight: 600; margin: 10px 0 4px; line-height: 1.4; }
+  .meta { color: #888; font-size: 12px; margin-bottom: 10px; }
+  .fmt { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid #eee; font-size: 14px; }
+  .fmt .q { font-weight: 600; }
+  .fmt .s { color: #888; font-size: 12px; }
+  .fmt a { margin-left: auto; color: #0b5fff; text-decoration: none; white-space: nowrap; }
+  .err { margin-top: 18px; background: #fdecea; color: #b3261e; border-radius: 10px; padding: 12px; font-size: 14px; line-height: 1.5; }
+  .loading { margin-top: 18px; color: #666; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>视频解析下载</h1>
+  <p class="sub">粘贴视频分享链接，解析出无水印直链下载。支持抖音、快手、小红书、B站、TikTok、Instagram、微博等。</p>
+  <div class="row">
+    <input id="url" type="url" placeholder="粘贴视频链接，如 https://v.douyin.com/…" autocomplete="off">
+    <button id="go">解析</button>
+  </div>
+  <p class="hint">只解析、不保存你的链接；下载直接从平台 CDN 取，不经过本站服务器。个别平台可能需要登录或限制访问，解析失败会提示原因。</p>
+  <div id="out"></div>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+const out = $('#out'), go = $('#go'), input = $('#url');
+
+function fmtSize(n) {
+  if (!n) return '';
+  if (n > 1073741824) return (n / 1073741824).toFixed(1) + ' GB';
+  if (n > 1048576) return (n / 1048576).toFixed(1) + ' MB';
+  if (n > 1024) return (n / 1024).toFixed(0) + ' KB';
+  return n + ' B';
+}
+function label(f) {
+  if (f.height) return f.height + 'p';
+  if (f.vcodec === 'none') return '纯音频';
+  return f.ext ? f.ext.toUpperCase() : '视频';
+}
+async function parse() {
+  const url = input.value.trim();
+  if (!url) { input.focus(); return; }
+  go.disabled = true;
+  out.innerHTML = '<p class="loading">解析中，请稍候…</p>';
+  try {
+    const r = await fetch('/api/parse', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || ('解析失败 (' + r.status + ')'));
+    if (!d.formats || !d.formats.length) throw new Error('没拿到可下载的直链，这个平台可能有限制');
+    const rows = d.formats.map(f =>
+      '<div class="fmt"><span class="q">' + label(f) + '</span>' +
+      '<span class="s">' + [f.ext, f.note, fmtSize(f.filesize)].filter(Boolean).join(' · ') + '</span>' +
+      '<a href="' + f.url + '" download target="_blank" rel="noopener">下载</a></div>'
+    ).join('');
+    out.innerHTML = '<div class="card">' +
+      (d.thumbnail ? '<img src="' + d.thumbnail + '" alt="">' : '') +
+      '<div class="title">' + (d.title || '未命名') + '</div>' +
+      '<div class="meta">' + [d.uploader, d.extractor].filter(Boolean).join(' · ') + '</div>' +
+      rows + '</div>';
+  } catch (e) {
+    out.innerHTML = '<div class="err">解析失败：' + String(e.message || e) + '</div>';
+  } finally {
+    go.disabled = false;
+  }
+}
+go.addEventListener('click', parse);
+input.addEventListener('keydown', e => { if (e.key === 'Enter') parse(); });
+</script>
+</body>
+</html>
