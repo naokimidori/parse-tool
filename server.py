@@ -59,18 +59,7 @@ def _pick_formats(info):
     return out
 
 
-def parse_url(url):
-    """Extract info with yt-dlp without downloading. Raises on failure."""
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "skip_download": True,
-        "socket_timeout": PARSE_TIMEOUT,
-        "retries": 1,
-        # Prefer the plain mp4 / best video so the returned URLs are directly playable.
-        "format": "bestvideo+bestaudio/best",
-    }
+def _extract(url, opts):
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
     if not info:
@@ -87,6 +76,34 @@ def parse_url(url):
         "extractor": info.get("extractor") or "",
         "formats": _pick_formats(info),
     }
+
+
+def parse_url(url):
+    """Extract info with yt-dlp without downloading. Raises on failure.
+
+    YouTube bot-checks datacenter IPs ("Sign in to confirm you're not a bot").
+    When the web client is refused, retry with the Android player client, which
+    bypasses the check but caps quality at ~360p. Other failures are not retried.
+    """
+    base_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "skip_download": True,
+        "socket_timeout": PARSE_TIMEOUT,
+        "retries": 1,
+        # Prefer the plain mp4 / best video so the returned URLs are directly playable.
+        "format": "bestvideo+bestaudio/best",
+    }
+    try:
+        return _extract(url, base_opts)
+    except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        if "not a bot" not in msg and "Sign in to confirm" not in msg:
+            raise
+        android_opts = dict(base_opts)
+        android_opts["extractor_args"] = {"youtube": {"player_client": ["android"]}}
+        return _extract(url, android_opts)
 
 
 class Handler(BaseHTTPRequestHandler):
